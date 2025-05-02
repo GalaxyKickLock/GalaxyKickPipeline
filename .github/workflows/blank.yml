@@ -1,4 +1,4 @@
-name: Expose GalaxyKick via LocalTunnel
+name: Expose GalaxyKick via LocalTunnel (with bypass header)
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 jobs:
   expose:
     runs-on: ubuntu-latest
-    timeout-minutes: 1440   # up to 24 hrs; adjust as needed
+    timeout-minutes: 1440   # keeps it alive up to 24 hrs
     env:
       PORT: 7860
       SUBDOMAIN: galaxykick
@@ -14,11 +14,6 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
-
-      - name: Setup Node.js (for localtunnel)
-        uses: actions/setup-node@v3
-        with:
-          node-version: '16'
 
       - name: Pull & run Docker container
         run: |
@@ -28,6 +23,40 @@ jobs:
             -p $PORT:$PORT \
             bharanidharan/galaxykick:v100
 
-      - name: Expose port via LocalTunnel
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Create LocalTunnel script
         run: |
-          npx localtunnel --port $PORT --subdomain $SUBDOMAIN
+          cat << 'EOF' > tunnel.js
+          #!/usr/bin/env node
+          const localtunnel = require('localtunnel');
+
+          (async () => {
+            const tunnel = await localtunnel({
+              port: process.env.PORT,
+              subdomain: process.env.SUBDOMAIN
+            });
+
+            console.log('🚀 Public URL:', tunnel.url);
+
+            // Inject headers on every inbound request
+            tunnel.on('request', (req) => {
+              req.headers['bypass-tunnel-reminder'] = '1';
+              // override user-agent if you like:
+              req.headers['user-agent'] = 'MyCustomAgent/1.0';
+            });
+
+            // keep the process alive
+            process.stdin.resume();
+          })();
+          EOF
+          chmod +x tunnel.js
+
+      - name: Install LocalTunnel client
+        run: npm install localtunnel
+
+      - name: Start tunnel (with bypass header)
+        run: node tunnel.js
