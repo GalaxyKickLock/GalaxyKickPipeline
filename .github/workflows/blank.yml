@@ -9,6 +9,7 @@ on:
 
 jobs:
   expose:
+    name: Run for ${{ inputs.username }}
     runs-on: ubuntu-latest
     timeout-minutes: 60 # Keeps tunnel alive for 1 hour
     env:
