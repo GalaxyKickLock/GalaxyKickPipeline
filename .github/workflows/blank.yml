@@ -1,36 +1,57 @@
 name: Expose GalaxyKick via LocalTunnel
-
 on:
   workflow_dispatch:
+    inputs:
+      username:
+        description: 'Username to use as subdomain'
+        required: true
+        type: string
 
 jobs:
   expose:
     runs-on: ubuntu-latest
-    timeout-minutes: 1440  # Keeps tunnel alive for 24 hours
+    timeout-minutes: 60 # Keeps tunnel alive for 1 hour
     env:
       PORT: 7860
-      SUBDOMAIN: myapp1
-
+      IMAGE_NAME: bharanidharan/galaxykick
+      IMAGE_TAG: v100
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        
+      - name: Docker cache layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-${{ env.IMAGE_NAME }}-
+        
       - name: Pull and run Docker container
         run: |
-          docker pull bharanidharan/galaxykick:v100
+          # Pull only if image doesn't exist locally
+          if ! docker image inspect $IMAGE_NAME:$IMAGE_TAG &>/dev/null; then
+            echo "Pulling Docker image..."
+            docker pull $IMAGE_NAME:$IMAGE_TAG
+          else
+            echo "Using cached Docker image..."
+          fi
+          
           docker run -d \
             --name galaxykick \
             -p $PORT:$PORT \
-            bharanidharan/galaxykick:v100
-
-
+            $IMAGE_NAME:$IMAGE_TAG
+            
       - name: Install Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '16'        
-
+          node-version: '16'
+          
       - name: Start localtunnel
         run: |
-          echo "Starting LocalTunnel..."
+          echo "Starting LocalTunnel with subdomain: ${{ github.event.inputs.username }}"
           npm install -g localtunnel
-          npx localtunnel --port $PORT --subdomain $SUBDOMAIN
+          npx localtunnel --port $PORT --subdomain ${{ github.event.inputs.username }}
