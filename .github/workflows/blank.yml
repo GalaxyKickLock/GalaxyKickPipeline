@@ -1,4 +1,4 @@
-name: Expose GalaxyKick via LocalTunnel
+name: Expose ${{ inputs.username }}
 on:
   workflow_dispatch:
     inputs:
