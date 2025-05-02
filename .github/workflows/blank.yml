@@ -1,17 +1,14 @@
 name: Expose GalaxyKick via LocalTunnel
 
-# manually trigger so it stays running until you cancel
 on:
   workflow_dispatch:
 
 jobs:
   expose:
     runs-on: ubuntu-latest
-    timeout-minutes: 1_440   # up to 24 hrs; adjust as needed
+    timeout-minutes: 1440   # up to 24 hrs; adjust as needed
     env:
       PORT: 7860
-      # choose a subdomain under 'loca.lt'; change to whatever you like,
-      # as long as nobody else has claimed it.
       SUBDOMAIN: galaxykick
 
     steps:
@@ -32,6 +29,5 @@ jobs:
             bharanidharan/galaxykick:v100
 
       - name: Expose port via LocalTunnel
-        # This step will keep running, streaming logs, until you cancel the workflow.
         run: |
           npx localtunnel --port $PORT --subdomain $SUBDOMAIN
