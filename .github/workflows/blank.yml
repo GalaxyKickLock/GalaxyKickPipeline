@@ -1,4 +1,4 @@
-name: Expose ${{ inputs.username }}
+name: Expose 
 on:
   workflow_dispatch:
     inputs:
