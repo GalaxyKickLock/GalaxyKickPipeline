@@ -1,62 +1,59 @@
-name: Push Docker Image to GHCR
+name: Push Docker Image to GitHub Container Registry
+
 on:
-  workflow_dispatch: # Allows manual triggering
-  push:
-    branches:
-      - main # Optional: Trigger on push to main branch
-    paths:
-      - 'Dockerfile' # Optional: Trigger only if Dockerfile changes
-      # Add other paths relevant to your Docker build context if needed
-env:
-  # Define the image name on GHCR.
-  # Uses the GitHub organization/user name automatically.
-  # Format: ghcr.io/OWNER/IMAGE_NAME
-  IMAGE_NAME: ${{ github.repository_owner }}/galaxykick
+  workflow_dispatch:
+    inputs:
+      source_image:
+        description: 'Source Docker image to push'
+        required: true
+        default: 'bharanidharan/galaxykick:v100'
+      destination_image:
+        description: 'Destination image name in GHCR'
+        required: true
+        default: 'galaxykick'
+      destination_tag:
+        description: 'Destination image tag in GHCR'
+        required: true
+        default: 'v100'
+
 jobs:
-  build_and_push:
-    name: Build and Push Image
+  push-to-ghcr:
     runs-on: ubuntu-latest
-    # Grant GITHUB_TOKEN permissions to write Packages
     permissions:
       contents: read
       packages: write
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
+      - name: Check out repository
+        uses: actions/checkout@v3
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v2
         with:
           registry: ghcr.io
-          # GITHUB_TOKEN is a temporary token provided by Actions runner
-          # It has permissions defined in the 'permissions' block above
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ env.IMAGE_NAME }}
-          # Define tags - here we explicitly use 'v100' and 'latest'
-          # You can add more logic based on git refs, etc.
-          tags: |
-            type=raw,value=v100
-            type=raw,value=latest,enable=true
-      
-      - name: Build and push Docker image
-        id: build-and-push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      
-      - name: Image Digest Output
-        run: echo "Pushed image digest: ${{ steps.build-and-push.outputs.digest }}"
+
+      - name: Pull existing image from Docker Hub
+        run: docker pull ${{ github.event.inputs.source_image }}
+
+      - name: Tag image for GitHub Container Registry
+        run: docker tag ${{ github.event.inputs.source_image }} ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.destination_image }}:${{ github.event.inputs.destination_tag }}
+
+      - name: Push to GitHub Container Registry
+        run: docker push ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.destination_image }}:${{ github.event.inputs.destination_tag }}
+
+      - name: Tag and push latest if pushing main version
+        if: ${{ github.event.inputs.destination_tag == 'v100' }}
+        run: |
+          docker tag ${{ github.event.inputs.source_image }} ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.destination_image }}:latest
+          docker push ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.destination_image }}:latest
