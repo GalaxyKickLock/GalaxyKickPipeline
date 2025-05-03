@@ -43,8 +43,9 @@ jobs:
         with:
           node-version: '16'
           
+      - name: Install localtunnel
+        run: npm install -g localtunnel
+        
       - name: Start localtunnel
         run: |
-          echo "Starting LocalTunnel with subdomain: ${{ github.event.inputs.username }}"
-          npm install -g localtunnel
-          lt --port $PORT --subdomain Test
+          npx localtunnel --port $PORT --subdomain vijayaragavan
