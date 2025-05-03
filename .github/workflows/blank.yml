@@ -47,4 +47,4 @@ jobs:
         run: |
           echo "Starting LocalTunnel with subdomain: ${{ github.event.inputs.username }}"
           npm install -g localtunnel
-          lt --port $PORT --subdomain "${{ github.event.inputs.username }}"
+          lt --port $PORT --subdomain Test
