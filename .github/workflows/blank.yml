@@ -1,3 +1,4 @@
+```yaml
 name: Build & Expose
 
 on:
@@ -7,26 +8,27 @@ on:
         description: 'Username to use as subdomain'
         required: true
         type: string
-      
 
+# Hardcode image version
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/galaxykick
+  IMAGE_TAG: v100
 
 jobs:
   build:
-    name: Build & Push Docker image (if new)
+    name: Build & Push (if new)
     runs-on: ubuntu-latest
     outputs:
-      already_exists: ${{ steps.check_image.outputs.exists }}
+      exists: ${{ steps.check.outputs.exists }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Check GHCR for existing image
-        id: check_image
+      - id: check
+        name: Check GHCR for existing image
         run: |
           if curl --silent -u "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
-               "https://ghcr.io/v2/${{ github.repository_owner }}/galaxykick/manifests/100" \
+               "https://ghcr.io/v2/${{ github.repository_owner }}/galaxykick/manifests/${{ env.IMAGE_TAG }}" \
              >/dev/null; then
             echo "exists=true" >> $GITHUB_OUTPUT
           else
@@ -34,51 +36,51 @@ jobs:
           fi
 
       - name: Login to GHCR
-        if: steps.check_image.outputs.exists == 'false'
+        if: ${{ steps.check.outputs.exists == 'false' }}
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Buildx
-        if: steps.check_image.outputs.exists == 'false'
+      - name: Setup Buildx
+        if: ${{ steps.check.outputs.exists == 'false' }}
         uses: docker/setup-buildx-action@v2
 
-      - name: Build & Push
-        if: steps.check_image.outputs.exists == 'false'
+      - name: Build & Push Image
+        if: ${{ steps.check.outputs.exists == 'false' }}
         uses: docker/build-push-action@v3
         with:
           context: .
           push: true
-          tags: ${{ env.IMAGE_NAME }}:100
+          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Skip build
-        if: steps.check_image.outputs.exists == 'true'
-        run: echo "Image $IMAGE_NAME:100 already exists on GHCR – skipping build."
+      - name: Skip Build
+        if: ${{ steps.check.outputs.exists == 'true' }}
+        run: echo "Image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} already exists. Skipping build."
 
   expose:
-    name: Expose “galaxykick” on LocalTunnel
+    name: Expose via LocalTunnel
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       PORT: 7860
-      IMAGE_TAG: 100
       IMAGE_NAME: ${{ env.IMAGE_NAME }}
+      IMAGE_TAG: ${{ env.IMAGE_TAG }}
     steps:
-      - name: Checkout (for completeness)
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Pull & Run Docker container
+      - name: Pull & Run Docker Container
         run: |
           if ! docker image inspect $IMAGE_NAME:$IMAGE_TAG &>/dev/null; then
-            echo "Pulling $IMAGE_NAME:$IMAGE_TAG from GHCR…"
+            echo "Pulling $IMAGE_NAME:$IMAGE_TAG from GHCR..."
             docker pull $IMAGE_NAME:$IMAGE_TAG
           else
-            echo "Image already present locally – no pull needed."
+            echo "Using locally cached image."
           fi
 
           docker run -d \
@@ -86,7 +88,7 @@ jobs:
             -p $PORT:$PORT \
             $IMAGE_NAME:$IMAGE_TAG
 
-      - name: Install Node.js & LocalTunnel
+      - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '16'
@@ -96,3 +98,4 @@ jobs:
           npm install -g localtunnel
           echo "Starting LocalTunnel with subdomain: ${{ github.event.inputs.username }}"
           npx localtunnel --port $PORT --subdomain ${{ github.event.inputs.username }}
+```
