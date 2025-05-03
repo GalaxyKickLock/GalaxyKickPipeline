@@ -45,7 +45,7 @@ jobs:
           # You can add more logic based on git refs, etc.
           tags: |
             type=raw,value=v100
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            type=raw,value=latest,enable=true
       
       - name: Build and push Docker image
         id: build-and-push
