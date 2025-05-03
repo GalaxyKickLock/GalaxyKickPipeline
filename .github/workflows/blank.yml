@@ -42,12 +42,19 @@ jobs:
 
       - id: check
         name: Check GHCR for existing image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if curl --silent -u "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
-               "https://ghcr.io/v2/${{ steps.lowercase.outputs.repo_owner }}/galaxykick/manifests/${{ env.IMAGE_TAG }}" \
-             >/dev/null; then
+          echo "Checking for image in ${{ steps.lowercase.outputs.repo_owner }}/galaxykick..."
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://ghcr.io/v2/${{ steps.lowercase.outputs.repo_owner }}/galaxykick/manifests/${{ env.IMAGE_TAG }}")
+          
+          if [ "$RESPONSE" = "200" ]; then
+            echo "Image exists"
             echo "exists=true" >> $GITHUB_OUTPUT
           else
+            echo "Image does not exist (HTTP response: $RESPONSE)"
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
@@ -100,16 +107,16 @@ jobs:
         env:
           PORT: 7860
           USERNAME: ${{ inputs.username || github.event.inputs.username }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FULL_IMAGE_NAME="${{ steps.set-image.outputs.image_name }}:${{ env.IMAGE_TAG }}"
           
-          if ! docker image inspect $FULL_IMAGE_NAME &>/dev/null; then
-            echo "Pulling $FULL_IMAGE_NAME from GHCR..."
-            docker pull $FULL_IMAGE_NAME
-          else
-            echo "Using locally cached image."
-          fi
-
+          # Login to GitHub Container Registry
+          echo "$GH_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          
+          echo "Pulling $FULL_IMAGE_NAME from GHCR..."
+          docker pull $FULL_IMAGE_NAME
+          
           docker run -d \
             --name galaxykick \
             -p $PORT:$PORT \
