@@ -1,6 +1,7 @@
 ```yaml
 name: Build & Expose
 
+# Allow manual dispatch and reusable calls
 on:
   workflow_dispatch:
     inputs:
@@ -8,6 +9,11 @@ on:
         description: 'Username to use as subdomain'
         required: true
         type: string
+  workflow_call:
+    inputs:
+      username:
+        type: string
+        required: true
 
 # Hardcode image version
 env:
@@ -70,6 +76,7 @@ jobs:
       PORT: 7860
       IMAGE_NAME: ${{ env.IMAGE_NAME }}
       IMAGE_TAG: ${{ env.IMAGE_TAG }}
+      USERNAME: ${{ inputs.username || github.event.inputs.username }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -96,6 +103,6 @@ jobs:
       - name: Start LocalTunnel
         run: |
           npm install -g localtunnel
-          echo "Starting LocalTunnel with subdomain: ${{ github.event.inputs.username }}"
-          npx localtunnel --port $PORT --subdomain ${{ github.event.inputs.username }}
+          echo "Starting LocalTunnel with subdomain: $USERNAME"
+          npx localtunnel --port $PORT --subdomain $USERNAME
 ```
