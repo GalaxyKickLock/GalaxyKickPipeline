@@ -7,10 +7,7 @@ on:
         description: 'Username to use as subdomain'
         required: true
         type: string
-      version:
-        description: 'Docker image tag (e.g. v1.0.0)'
-        required: true
-        type: string
+      
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/galaxykick
@@ -29,7 +26,7 @@ jobs:
         id: check_image
         run: |
           if curl --silent -u "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
-               "https://ghcr.io/v2/${{ github.repository_owner }}/galaxykick/manifests/${{ github.event.inputs.version }}" \
+               "https://ghcr.io/v2/${{ github.repository_owner }}/galaxykick/manifests/100" \
              >/dev/null; then
             echo "exists=true" >> $GITHUB_OUTPUT
           else
@@ -54,13 +51,13 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ github.event.inputs.version }}
+          tags: ${{ env.IMAGE_NAME }}:100
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Skip build
         if: steps.check_image.outputs.exists == 'true'
-        run: echo "Image $IMAGE_NAME:${{ github.event.inputs.version }} already exists on GHCR – skipping build."
+        run: echo "Image $IMAGE_NAME:100 already exists on GHCR – skipping build."
 
   expose:
     name: Expose “galaxykick” on LocalTunnel
@@ -69,7 +66,7 @@ jobs:
     timeout-minutes: 60
     env:
       PORT: 7860
-      IMAGE_TAG: ${{ github.event.inputs.version }}
+      IMAGE_TAG: 100
       IMAGE_NAME: ${{ env.IMAGE_NAME }}
     steps:
       - name: Checkout (for completeness)
