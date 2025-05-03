@@ -16,6 +16,7 @@ jobs:
       PORT: 7860
       IMAGE_NAME: bharanidharan/galaxykick
       IMAGE_TAG: v100
+      LOWERCASE_USERNAME: ${{ github.event.inputs.username | downcase }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -48,4 +49,4 @@ jobs:
         
       - name: Start localtunnel
         run: |
-          npx localtunnel --port $PORT --subdomain ${{ inputs.username }}
+          npx localtunnel --port $PORT --subdomain $LOWERCASE_USERNAME
