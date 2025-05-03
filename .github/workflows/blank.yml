@@ -1,94 +1,50 @@
-name: Build & Expose with Docker‐Image Cache
-
+name: Expose GalaxyKick via LocalTunnel
 on:
   workflow_dispatch:
     inputs:
       username:
-        description: 'Subdomain for LocalTunnel'
+        description: 'Username to use as subdomain'
         required: true
         type: string
-  workflow_call:
-    inputs:
-      username:
-        type: string
-        required: true
-
-env:
-  IMAGE_NAME: ghcr.io/galaxykicklock/galaxykick
-  IMAGE_TAG: latest
-  CACHE_PATH: /tmp/image-cache
 
 jobs:
   expose:
     name: Run for ${{ inputs.username }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    permissions:
-      contents: read     # for checkout
-      packages: read     # for GHCR
-
+    timeout-minutes: 60 # Keeps tunnel alive for 1 hour
+    env:
+      PORT: 7860
+      IMAGE_NAME: bharanidharan/galaxykick
+      IMAGE_TAG: v100
     steps:
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Restore Docker image cache
-        id: cache-image
-        uses: actions/cache@v3
-        with:
-          path: ${{ env.CACHE_PATH }}
-          key: docker-image-${{ env.IMAGE_TAG }}-${{ runner.os }}
-          # restore-keys can help if tag changes, but optional:
-          restore-keys: |
-            docker-image-${{ runner.os }}-
-
-      - name: Load image from cache or pull from GHCR
-        id: load-or-pull
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        
+      - name: Pull and run Docker container
         run: |
-          IMAGE_REF="${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
-          mkdir -p "${{ env.CACHE_PATH }}"
-          
-          if [ -f "${{ env.CACHE_PATH }}/image.tar" ]; then
-            echo "✅ Cache hit: loading $IMAGE_REF from tarball"
-            docker load -i "${{ env.CACHE_PATH }}/image.tar"
+          # Pull only if image doesn't exist locally
+          if ! docker image inspect $IMAGE_NAME:$IMAGE_TAG &>/dev/null; then
+            echo "Pulling Docker image..."
+            docker pull $IMAGE_NAME:$IMAGE_TAG
           else
-            echo "🔄 Cache miss: pulling $IMAGE_REF from GHCR"
-            docker pull "$IMAGE_REF"
-            echo "🗄️ Saving pulled image into cache tarball"
-            docker save -o "${{ env.CACHE_PATH }}/image.tar" "$IMAGE_REF"
+            echo "Using cached Docker image..."
           fi
-
-          echo "image_ref=$IMAGE_REF" >> $GITHUB_OUTPUT
-
-      - name: Verify image availability
-        run: docker image inspect "${{ steps.load-or-pull.outputs.image_ref }}"
-
-      - name: Run Docker container
-        env:
-          PORT: 7860
-          USERNAME: ${{ inputs.username || github.event.inputs.username }}
-          IMAGE_REF: ${{ steps.load-or-pull.outputs.image_ref }}
-        run: |
-          docker rm -f galaxykick || true
+          
           docker run -d \
             --name galaxykick \
             -p $PORT:$PORT \
-            $IMAGE_REF
-          sleep 5
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+            $IMAGE_NAME:$IMAGE_TAG
+            
+      - name: Install Node.js
+        uses: actions/setup-node@v3
         with:
-          node-version: '20'
-
-      - name: Start LocalTunnel
-        env:
-          PORT: 7860
-          USERNAME: ${{ inputs.username || github.event.inputs.username }}
+          node-version: '16'
+          
+      - name: Start localtunnel
         run: |
-          npx localtunnel --port $PORT --subdomain $USERNAME
-
+          echo "Starting LocalTunnel with subdomain: ${{ github.event.inputs.username }}"
+          npm install -g localtunnel
+          npx localtunnel --port $PORT --subdomain ${{ github.event.inputs.username }}
