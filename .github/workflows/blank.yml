@@ -14,10 +14,12 @@ on:
         type: string
         required: true
 
-# Define image source
+# Define image source and cache path
 env:
   IMAGE_NAME: bharanidharan/galaxykick
   IMAGE_TAG: v100
+  # Define a specific path for the image tarball cache
+  IMAGE_TAR_PATH: /tmp/cached-image.tar
 
 jobs:
   expose:
@@ -25,51 +27,104 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Setup Docker Layer Caching
-        uses: actions/cache@v3
+      # Step 1: Check for cached image tarball
+      - name: Check cache for Docker image tarball
+        id: cache-docker-image
+        uses: actions/cache@v3 # Consider updating to v4 when stable
         with:
-          path: /var/lib/docker
-          key: docker-layers-${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}
+          # Cache the specific tarball file
+          path: ${{ env.IMAGE_TAR_PATH }}
+          # Key based on the image name and tag
+          key: docker-image-cache-${{ runner.os }}-${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}
+          # Fallback key if the exact tag isn't found (optional, useful if tags change often but base image is similar)
           restore-keys: |
-            docker-layers-${{ env.IMAGE_NAME }}-
+            docker-image-cache-${{ runner.os }}-${{ env.IMAGE_NAME }}-
 
-      - name: Pull Docker image (if not cached)
-        id: pull-image
+      # Step 2: Load image from cache OR pull and save for next time
+      - name: Load image from cache or Pull and Save
+        id: load-or-pull
         run: |
-          # Check if image already exists locally
-          if docker image inspect ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} &>/dev/null; then
-            echo "Using cached image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
-            echo "cached=true" >> $GITHUB_OUTPUT
+          # Check if the cache hit and the tar file exists
+          if [[ "${{ steps.cache-docker-image.outputs.cache-hit }}" == "true" && -f "${{ env.IMAGE_TAR_PATH }}" ]]; then
+            echo "Cache hit. Attempting to load image from ${{ env.IMAGE_TAR_PATH }}..."
+            # Try loading the image from the tarball
+            if docker load -i ${{ env.IMAGE_TAR_PATH }}; then
+              echo "Successfully loaded ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} from cache."
+              # Verify it loaded correctly
+              if docker image inspect ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} &>/dev/null; then
+                 echo "Image confirmed loaded."
+                 echo "loaded_from_cache=true" >> $GITHUB_OUTPUT
+              else
+                 echo "::warning::Cache hit and loaded, but image inspect failed. Will pull."
+                 echo "loaded_from_cache=false" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "::warning::Cache hit, but 'docker load' failed. Will pull."
+              echo "loaded_from_cache=false" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "Pulling ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} from Docker Hub..."
-            docker pull ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-            echo "cached=false" >> $GITHUB_OUTPUT
+            echo "No cache hit or cache file missing. Will pull image."
+            echo "loaded_from_cache=false" >> $GITHUB_OUTPUT
           fi
 
+          # If image wasn't loaded from cache, pull it
+          if [[ "${{ steps.load-or-pull.outputs.loaded_from_cache }}" != "true" ]]; then
+            echo "Pulling ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} from Docker Hub..."
+            docker pull ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+            # Save the newly pulled image to the tarball path for caching
+            echo "Saving image to ${{ env.IMAGE_TAR_PATH }} for future caching..."
+            # Ensure the directory exists in case /tmp is cleaned differently
+            mkdir -p $(dirname ${{ env.IMAGE_TAR_PATH }})
+            docker save -o ${{ env.IMAGE_TAR_PATH }} ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            echo "Image saved."
+          fi
+
+      # Step 3: Verify image is actually available before running
+      - name: Verify Docker Image Availability
+        run: |
+          echo "Verifying image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} is available..."
+          docker image inspect ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} > /dev/null
+          if [ $? -ne 0 ]; then
+            echo "::error::Docker image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} is NOT available after load/pull steps!"
+            exit 1
+          fi
+          echo "Image confirmed available."
+
+      # Step 4: Run Docker Container (Now uses the cached or pulled image)
       - name: Run Docker Container
         env:
           PORT: 7860
           USERNAME: ${{ inputs.username || github.event.inputs.username }}
         run: |
           echo "Starting container from ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
-          
+          # Optional: Remove any leftover container with the same name first
+          docker rm -f galaxykick || true
+          # Run the container
           docker run -d \
             --name galaxykick \
             -p $PORT:$PORT \
             ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          
           echo "Container started successfully"
+          # Add a small delay to allow the container to initialize if needed
+          sleep 5
 
+      # Step 5: Set up Node.js
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v3 # Consider updating to v4
         with:
-          node-version: '16'
+          node-version: '16' # Consider using a newer LTS version like '18' or '20'
 
+      # Step 6: Start LocalTunnel
       - name: Start LocalTunnel
         env:
           PORT: 7860
           USERNAME: ${{ inputs.username || github.event.inputs.username }}
         run: |
           npm install -g localtunnel
-          echo "Starting LocalTunnel with subdomain: $USERNAME"
+          echo "Starting LocalTunnel with subdomain: $USERNAME for port $PORT"
+          # Run localtunnel in the background (&) so the workflow can potentially continue
+          # If you need the URL later, you'd need to capture output or use other methods.
+          # Note: This step will keep running until the job times out or is cancelled.
           npx localtunnel --port $PORT --subdomain $USERNAME
+          # The job will stay active here until the timeout (60 min)
