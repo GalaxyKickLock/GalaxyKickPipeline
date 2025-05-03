@@ -46,14 +46,20 @@ jobs:
       - name: Pull existing image from Docker Hub
         run: docker pull ${{ github.event.inputs.source_image }}
 
+      - name: Convert repository owner to lowercase
+        id: lowercase
+        run: |
+          echo "repo_owner=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "dest_image=$(echo ${{ github.event.inputs.destination_image }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - name: Tag image for GitHub Container Registry
-        run: docker tag ${{ github.event.inputs.source_image }} ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.destination_image }}:${{ github.event.inputs.destination_tag }}
+        run: docker tag ${{ github.event.inputs.source_image }} ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/${{ steps.lowercase.outputs.dest_image }}:${{ github.event.inputs.destination_tag }}
 
       - name: Push to GitHub Container Registry
-        run: docker push ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.destination_image }}:${{ github.event.inputs.destination_tag }}
+        run: docker push ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/${{ steps.lowercase.outputs.dest_image }}:${{ github.event.inputs.destination_tag }}
 
       - name: Tag and push latest if pushing main version
         if: ${{ github.event.inputs.destination_tag == 'v100' }}
         run: |
-          docker tag ${{ github.event.inputs.source_image }} ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.destination_image }}:latest
-          docker push ghcr.io/${{ github.repository_owner }}/${{ github.event.inputs.destination_image }}:latest
+          docker tag ${{ github.event.inputs.source_image }} ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/${{ steps.lowercase.outputs.dest_image }}:latest
+          docker push ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/${{ steps.lowercase.outputs.dest_image }}:latest
