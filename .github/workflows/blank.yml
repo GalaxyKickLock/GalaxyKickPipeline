@@ -14,113 +14,51 @@ on:
         type: string
         required: true
 
-# Hardcode image version
+# Define image source
 env:
+  IMAGE_NAME: bharanidharan/galaxykick
   IMAGE_TAG: v100
 
 jobs:
-  build:
-    name: Build & Push (if new)
-    runs-on: ubuntu-latest
-    outputs:
-      exists: ${{ steps.check.outputs.exists }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        
-      - name: Set lowercase repository owner
-        id: lowercase
-        run: |
-          echo "repo_owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-          echo "Lowercase repository owner: $(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
-      
-      - name: Set image name
-        id: set-image
-        run: |
-          echo "image_name=ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/galaxykick" >> $GITHUB_OUTPUT
-          echo "Full image name: ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/galaxykick:${{ env.IMAGE_TAG }}"
-
-      - id: check
-        name: Check GHCR for existing image
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "Checking for image in ${{ steps.lowercase.outputs.repo_owner }}/galaxykick..."
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            "https://ghcr.io/v2/${{ steps.lowercase.outputs.repo_owner }}/galaxykick/manifests/${{ env.IMAGE_TAG }}")
-          
-          if [ "$RESPONSE" = "200" ]; then
-            echo "Image exists"
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Image does not exist (HTTP response: $RESPONSE)"
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Login to GHCR
-        if: ${{ steps.check.outputs.exists == 'false' }}
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Buildx
-        if: ${{ steps.check.outputs.exists == 'false' }}
-        uses: docker/setup-buildx-action@v2
-
-      - name: Build & Push Image
-        if: ${{ steps.check.outputs.exists == 'false' }}
-        uses: docker/build-push-action@v3
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.set-image.outputs.image_name }}:${{ env.IMAGE_TAG }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Skip Build
-        if: ${{ steps.check.outputs.exists == 'true' }}
-        run: echo "Image ${{ steps.set-image.outputs.image_name }}:${{ env.IMAGE_TAG }} already exists. Skipping build."
-
   expose:
     name: Expose via LocalTunnel
-    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        
-      - name: Set lowercase repository owner
-        id: lowercase
-        run: |
-          echo "repo_owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-      
-      - name: Set image name
-        id: set-image
-        run: |
-          echo "image_name=ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/galaxykick" >> $GITHUB_OUTPUT
+      - name: Setup Docker Layer Caching
+        uses: actions/cache@v3
+        with:
+          path: /var/lib/docker
+          key: docker-layers-${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}
+          restore-keys: |
+            docker-layers-${{ env.IMAGE_NAME }}-
 
-      - name: Pull & Run Docker Container
+      - name: Pull Docker image (if not cached)
+        id: pull-image
+        run: |
+          # Check if image already exists locally
+          if docker image inspect ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} &>/dev/null; then
+            echo "Using cached image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
+            echo "cached=true" >> $GITHUB_OUTPUT
+          else
+            echo "Pulling ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} from Docker Hub..."
+            docker pull ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            echo "cached=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Docker Container
         env:
           PORT: 7860
           USERNAME: ${{ inputs.username || github.event.inputs.username }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          FULL_IMAGE_NAME="${{ steps.set-image.outputs.image_name }}:${{ env.IMAGE_TAG }}"
-          
-          # Login to GitHub Container Registry
-          echo "$GH_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          
-          echo "Pulling $FULL_IMAGE_NAME from GHCR..."
-          docker pull $FULL_IMAGE_NAME
+          echo "Starting container from ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
           
           docker run -d \
             --name galaxykick \
             -p $PORT:$PORT \
-            $FULL_IMAGE_NAME
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          
+          echo "Container started successfully"
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -133,5 +71,5 @@ jobs:
           USERNAME: ${{ inputs.username || github.event.inputs.username }}
         run: |
           npm install -g localtunnel
-          echo "Starting LocalTunnel with subdomain: ${{ inputs.username || github.event.inputs.username }}"
-          npx localtunnel --port $PORT --subdomain ${{ inputs.username || github.event.inputs.username }}
+          echo "Starting LocalTunnel with subdomain: $USERNAME"
+          npx localtunnel --port $PORT --subdomain $USERNAME
