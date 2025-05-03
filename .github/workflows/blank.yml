@@ -1,4 +1,5 @@
-name: Expose 
+name: Build & Expose
+
 on:
   workflow_dispatch:
     inputs:
@@ -6,53 +7,95 @@ on:
         description: 'Username to use as subdomain'
         required: true
         type: string
+      version:
+        description: 'Docker image tag (e.g. v1.0.0)'
+        required: true
+        type: string
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/galaxykick
 
 jobs:
-  expose:
-    name: Run for ${{ inputs.username }}
+  build:
+    name: Build & Push Docker image (if new)
     runs-on: ubuntu-latest
-    timeout-minutes: 60 # Keeps tunnel alive for 1 hour
+    outputs:
+      already_exists: ${{ steps.check_image.outputs.exists }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Check GHCR for existing image
+        id: check_image
+        run: |
+          if curl --silent -u "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+               "https://ghcr.io/v2/${{ github.repository_owner }}/galaxykick/manifests/${{ github.event.inputs.version }}" \
+             >/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Login to GHCR
+        if: steps.check_image.outputs.exists == 'false'
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        if: steps.check_image.outputs.exists == 'false'
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build & Push
+        if: steps.check_image.outputs.exists == 'false'
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.event.inputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Skip build
+        if: steps.check_image.outputs.exists == 'true'
+        run: echo "Image $IMAGE_NAME:${{ github.event.inputs.version }} already exists on GHCR – skipping build."
+
+  expose:
+    name: Expose “galaxykick” on LocalTunnel
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       PORT: 7860
-      IMAGE_NAME: bharanidharan/galaxykick
-      IMAGE_TAG: v100
+      IMAGE_TAG: ${{ github.event.inputs.version }}
+      IMAGE_NAME: ${{ env.IMAGE_NAME }}
     steps:
-      - name: Checkout repository
+      - name: Checkout (for completeness)
         uses: actions/checkout@v3
-        
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-        
-      - name: Docker cache layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-${{ env.IMAGE_NAME }}-
-        
-      - name: Pull and run Docker container
+
+      - name: Pull & Run Docker container
         run: |
-          # Pull only if image doesn't exist locally
           if ! docker image inspect $IMAGE_NAME:$IMAGE_TAG &>/dev/null; then
-            echo "Pulling Docker image..."
+            echo "Pulling $IMAGE_NAME:$IMAGE_TAG from GHCR…"
             docker pull $IMAGE_NAME:$IMAGE_TAG
           else
-            echo "Using cached Docker image..."
+            echo "Image already present locally – no pull needed."
           fi
-          
+
           docker run -d \
             --name galaxykick \
             -p $PORT:$PORT \
             $IMAGE_NAME:$IMAGE_TAG
-            
-      - name: Install Node.js
+
+      - name: Install Node.js & LocalTunnel
         uses: actions/setup-node@v3
         with:
           node-version: '16'
-          
-      - name: Start localtunnel
+
+      - name: Start LocalTunnel
         run: |
-          echo "Starting LocalTunnel with subdomain: ${{ github.event.inputs.username }}"
           npm install -g localtunnel
+          echo "Starting LocalTunnel with subdomain: ${{ github.event.inputs.username }}"
           npx localtunnel --port $PORT --subdomain ${{ github.event.inputs.username }}
