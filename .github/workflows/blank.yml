@@ -20,7 +20,7 @@ env:
 
 jobs:
   expose:
-    name: Expose via LocalTunnel
+    name: Run for ${{ inputs.username }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
