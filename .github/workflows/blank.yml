@@ -16,11 +16,13 @@ jobs:
       PORT: 7860
       IMAGE_NAME: bharanidharan/galaxykick
       IMAGE_TAG: v100
-      LOWERCASE_USERNAME: ${{ github.event.inputs.username | downcase }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-        
+
+      - name: Convert username to lowercase
+        run: echo "LOWERCASE_USERNAME=$(echo ${{ inputs.username }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
         
