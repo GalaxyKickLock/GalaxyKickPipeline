@@ -16,7 +16,6 @@ on:
 
 # Hardcode image version
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner | lower }}/galaxykick
   IMAGE_TAG: v100
 
 jobs:
@@ -28,12 +27,24 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        
+      - name: Set lowercase repository owner
+        id: lowercase
+        run: |
+          echo "repo_owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "Lowercase repository owner: $(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+      
+      - name: Set image name
+        id: set-image
+        run: |
+          echo "image_name=ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/galaxykick" >> $GITHUB_OUTPUT
+          echo "Full image name: ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/galaxykick:${{ env.IMAGE_TAG }}"
 
       - id: check
         name: Check GHCR for existing image
         run: |
           if curl --silent -u "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
-               "https://ghcr.io/v2/${{ github.repository_owner }}/galaxykick/manifests/${{ env.IMAGE_TAG }}" \
+               "https://ghcr.io/v2/${{ steps.lowercase.outputs.repo_owner }}/galaxykick/manifests/${{ env.IMAGE_TAG }}" \
              >/dev/null; then
             echo "exists=true" >> $GITHUB_OUTPUT
           else
@@ -58,13 +69,13 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          tags: ${{ steps.set-image.outputs.image_name }}:${{ env.IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Skip Build
         if: ${{ steps.check.outputs.exists == 'true' }}
-        run: echo "Image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} already exists. Skipping build."
+        run: echo "Image ${{ steps.set-image.outputs.image_name }}:${{ env.IMAGE_TAG }} already exists. Skipping build."
 
   expose:
     name: Expose via LocalTunnel
@@ -74,17 +85,27 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        
+      - name: Set lowercase repository owner
+        id: lowercase
+        run: |
+          echo "repo_owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      
+      - name: Set image name
+        id: set-image
+        run: |
+          echo "image_name=ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/galaxykick" >> $GITHUB_OUTPUT
 
       - name: Pull & Run Docker Container
         env:
           PORT: 7860
-          IMAGE_NAME: ${{ env.IMAGE_NAME }}
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
           USERNAME: ${{ inputs.username || github.event.inputs.username }}
         run: |
-          if ! docker image inspect $(echo "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" | tr '[:upper:]' '[:lower:]') &>/dev/null; then
-            echo "Pulling ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} from GHCR..."
-            docker pull $(echo "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" | tr '[:upper:]' '[:lower:]')
+          FULL_IMAGE_NAME="${{ steps.set-image.outputs.image_name }}:${{ env.IMAGE_TAG }}"
+          
+          if ! docker image inspect $FULL_IMAGE_NAME &>/dev/null; then
+            echo "Pulling $FULL_IMAGE_NAME from GHCR..."
+            docker pull $FULL_IMAGE_NAME
           else
             echo "Using locally cached image."
           fi
@@ -92,7 +113,7 @@ jobs:
           docker run -d \
             --name galaxykick \
             -p $PORT:$PORT \
-            $(echo "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" | tr '[:upper:]' '[:lower:]')
+            $FULL_IMAGE_NAME
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
