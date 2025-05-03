@@ -16,7 +16,7 @@ on:
 
 # Hardcode image version
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/galaxykick
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner | lower }}/galaxykick
   IMAGE_TAG: v100
 
 jobs:
@@ -82,9 +82,9 @@ jobs:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
           USERNAME: ${{ inputs.username || github.event.inputs.username }}
         run: |
-          if ! docker image inspect ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} &>/dev/null; then
+          if ! docker image inspect $(echo "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" | tr '[:upper:]' '[:lower:]') &>/dev/null; then
             echo "Pulling ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} from GHCR..."
-            docker pull ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            docker pull $(echo "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" | tr '[:upper:]' '[:lower:]')
           else
             echo "Using locally cached image."
           fi
@@ -92,7 +92,7 @@ jobs:
           docker run -d \
             --name galaxykick \
             -p $PORT:$PORT \
-            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            $(echo "${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" | tr '[:upper:]' '[:lower:]')
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
