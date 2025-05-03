@@ -48,4 +48,4 @@ jobs:
         
       - name: Start localtunnel
         run: |
-          npx localtunnel --port $PORT --subdomain vijayaragavan
+          npx localtunnel --port $PORT --subdomain $SUBDOMAIN
