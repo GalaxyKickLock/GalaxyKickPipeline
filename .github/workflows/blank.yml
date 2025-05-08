@@ -30,12 +30,9 @@ jobs:
         shell: powershell
         run: |
           # Pull only if image doesn't exist locally
-          if (-NOT (docker image inspect $env:IMAGE_NAME`:$env:IMAGE_TAG 2>$null)) {
-            Write-Host "Pulling Docker image..."
-            docker pull $env:IMAGE_NAME`:$env:IMAGE_TAG
-          } else {
-            Write-Host "Using cached Docker image..."
-          }
+       
+          docker pull $env:IMAGE_NAME`:$env:IMAGE_TAG
+         
           
           docker run -d `
             --name galaxykick `
