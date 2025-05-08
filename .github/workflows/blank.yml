@@ -27,19 +27,22 @@ jobs:
       #  uses: docker/setup-buildx-action@v3
         
       - name: Pull and run Docker container
+        shell: powershell
         run: |
           # Pull only if image doesn't exist locally
-          if ! docker image inspect $IMAGE_NAME:$IMAGE_TAG &>/dev/null; then
-            echo "Pulling Docker image..."
-            docker pull $IMAGE_NAME:$IMAGE_TAG
-          else
-            echo "Using cached Docker image..."
-          fi
+          if (-NOT (docker image inspect $env:IMAGE_NAME`:$env:IMAGE_TAG 2>$null)) {
+            Write-Host "Pulling Docker image..."
+            docker pull $env:IMAGE_NAME`:$env:IMAGE_TAG
+          } else {
+            Write-Host "Using cached Docker image..."
+          }
           
-          docker run -d \
-            --name galaxykick \
-            -p $PORT:$PORT \
-            $IMAGE_NAME:$IMAGE_TAG
+          docker run -d `
+            --name galaxykick `
+            -p $env:PORT`:$env:PORT `
+            --cpus 1.5 `
+            --memory 3g `
+            $env:IMAGE_NAME`:$env:IMAGE_TAG
             
       - name: Install Node.js
         uses: actions/setup-node@v3
@@ -47,8 +50,10 @@ jobs:
           node-version: '16'
           
       - name: Install localtunnel
+        shell: powershell
         run: npm install -g localtunnel
         
       - name: Start localtunnel
+        shell: powershell
         run: |
-          npx localtunnel --port $PORT --subdomain $LOWERCASE_USERNAME
+          npx localtunnel --port $env:PORT --subdomain $env:LOWERCASE_USERNAME
