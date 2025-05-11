@@ -1,4 +1,4 @@
-name: Expose GalaxyKick via LocalTunnel
+name: GalaxyKick Service
 on:
   workflow_dispatch:
     inputs:
@@ -11,7 +11,7 @@ jobs:
   expose:
     name: Run for ${{ inputs.username }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60 # Keeps tunnel alive for 1 hour
+    timeout-minutes: 60 
     env:
       PORT: 7860
       IMAGE_NAME: bharanidharan/galaxykick
@@ -46,9 +46,9 @@ jobs:
         with:
           node-version: '16'
           
-      - name: Install localtunnel
+      - name: Install lt
         run: npm install -g localtunnel
         
-      - name: Start localtunnel
+      - name: Start lt
         run: |
           npx localtunnel --port $PORT --subdomain $LOWERCASE_USERNAME
